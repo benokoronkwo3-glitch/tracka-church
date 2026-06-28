@@ -1,0 +1,206 @@
+import { useState, useEffect, useCallback } from "react";
+
+const SB_URL = "https://saxtkbtmszkqstdoamvv.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNheHRrYnRtc3prcXN0ZG9hbXZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNDU0MzAsImV4cCI6MjA5NjYyMTQzMH0.uXpzhMg_QJR1Ewj5OfFlAwStDrP0gvolCqBrDE1mIqE";
+
+const CHURCHES = {
+
+  grace_of_god: {
+    id:          "grace_of_god",
+    name:        "Grace of God Mission International",
+    denomination:"His Glory Cathedral",
+    address:     "33 Trans Nkisi, GRA Onitsha, Anambra State",
+    state:       "Anambra State",
+    pastor:      "Bishop Dr Paul Nwachukwu",
+    phone:       "08033210572",
+    logo:        "GGM",
+    branches: [
+      "HQ - Trans Nkisi GRA",
+      "His Glory Parish - Niger Drive GRA",
+      "His Glory Parish - Stock Exchange GRA",
+      "GGM - Owerri Rd Enugu",
+      "GGM - New Market Rd Onitsha",
+      "GGM - Fegge",
+      "GGM - Awada",
+      "GGM - Nnewi",
+      "GGM - Nkpor",
+    ],
+    theme: {
+      primary: "#ea580c",
+      dark:    "#7c2d12",
+      light:   "#fff7ed",
+      mid:     "#ffedd5",
+      border:  "#fed7aa",
+      login:   "linear-gradient(135deg,#7c2d12,#ea580c,#fbbf24)",
+      logo:    "linear-gradient(135deg,#ea580c,#fbbf24)",
+    },
+  },
+
+  // ADD NEW CHURCH HERE
+
+};
+
+const PERM={pastor:{fin:true,del:true,usr:true},treasurer:{fin:true,del:false,usr:false},secretary:{fin:false,del:false,usr:false},worker:{fin:false,del:false,usr:false}};
+
+async function dbCall(path,opts={}){
+  const{headers:xh={},...rest}=opts;
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/${path}`,{...rest,headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":"application/json",Prefer:"return=representation",...xh}});
+    if(r.status===204)return{data:[],error:null};
+    const j=await r.json();
+    return r.ok?{data:j,error:null}:{data:null,error:j};
+  }catch(e){return{data:null,error:{message:e.message}};}
+}
+
+const db={
+  get:(t,cid,q="")=>dbCall(`${t}?client_id=eq.${cid}${q?"&"+q:""}`),
+  post:(t,b)=>dbCall(t,{method:"POST",body:JSON.stringify(b)}),
+  patch:(t,id,b)=>dbCall(`${t}?id=eq.${id}`,{method:"PATCH",body:JSON.stringify(b)}),
+  remove:(t,id)=>dbCall(`${t}?id=eq.${id}`,{method:"DELETE"}),
+};
+
+const fmt=n=>"N"+Number(n||0).toLocaleString("en-NG");
+const genId=()=>Date.now()+"_"+Math.random().toString(36).slice(2,6);
+const tod=()=>new Date().toISOString().split("T")[0];
+
+export default function App(){
+  const p=new URLSearchParams(window.location.search);
+  const fromUrl=p.get("church");
+  if(fromUrl&&CHURCHES[fromUrl]){localStorage.setItem("tracka_church_client",fromUrl);window.history.replaceState({},"",window.location.pathname);}
+  const key=fromUrl||localStorage.getItem("tracka_church_client");
+  const church=CHURCHES[key];
+  const[user,setUser]=useState(null);
+  if(!church)return(
+    <div style={{minHeight:"100vh",background:"#7c2d12",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"sans-serif"}}>
+      <div style={{textAlign:"center",color:"#fff"}}>
+        <div style={{fontSize:22,fontWeight:800,marginBottom:8}}>Tracka Church</div>
+        <div style={{fontSize:14,color:"#fed7aa",marginBottom:4}}>Invalid Access Link</div>
+        <div style={{fontSize:12,color:"#ffedd5"}}>Contact your church administrator for the correct link.</div>
+      </div>
+    </div>
+  );
+  if(!user)return<LoginScreen church={church} onLogin={setUser}/>;
+  return<MainApp church={church} user={user} onLogout={()=>setUser(null)}/>;
+}
+
+function LoginScreen({church,onLogin}){
+  const T=church.theme;
+  const[users,setUsers]=useState([]);
+  const[email,setEmail]=useState("");
+  const[pin,setPin]=useState("");
+  const[err,setErr]=useState("");
+  const[loading,setLoading]=useState(true);
+  const[dbOk,setDbOk]=useState(null);
+  useEffect(()=>{
+    (async()=>{
+      const res=await db.get("users",church.id,"order=name.asc");
+      if(res.error){setDbOk(false);setLoading(false);return;}
+      setDbOk(true);
+      const rows=Array.isArray(res.data)?res.data:[];
+      if(rows.length===0){
+        const owner={id:genId(),client_id:church.id,name:church.pastor,role:"pastor",branch:null,pin:"0000",email:church.id+"@tracka.ng",active:true};
+        await db.post("users",owner);setUsers([owner]);
+      }else setUsers(rows);
+      setLoading(false);
+    })();
+  },[church.id]);
+  const go=()=>{
+    const u=users.find(x=>x.email.toLowerCase()===email.toLowerCase().trim()&&x.pin===pin.trim());
+    if(!u){setErr("Email or PIN incorrect.");return;}
+    if(!u.active){setErr("Account disabled.");return;}
+    onLogin(u);
+  };
+  const inp={width:"100%",background:T.light,border:`1px solid ${T.border}`,borderRadius:7,padding:"10px 12px",color:T.dark,fontSize:14,outline:"none",boxSizing:"border-box"};
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:T.primary,marginBottom:5,textTransform:"uppercase",letterSpacing:.5};
+  return(
+    <div style={{minHeight:"100vh",background:T.login,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif",padding:20}}>
+      <div style={{background:"#fff",border:`1px solid ${T.border}`,borderRadius:20,padding:"40px 36px",width:"100%",maxWidth:420}}>
+        <div style={{width:60,height:60,borderRadius:16,background:T.logo,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900,color:"#fff",margin:"0 auto 14px"}}>{church.logo}</div>
+        <div style={{textAlign:"center",fontWeight:900,fontSize:13,color:T.primary,marginBottom:2}}>TRACKA CHURCH</div>
+        <div style={{textAlign:"center",fontWeight:800,fontSize:18,color:T.dark,marginBottom:4}}>{church.name}</div>
+        <div style={{textAlign:"center",fontSize:12,color:T.primary,fontStyle:"italic",marginBottom:4}}>{church.denomination}</div>
+        <div style={{textAlign:"center",fontSize:12,color:"#64748b",marginBottom:20}}>{church.address}</div>
+        <div style={{height:1,background:T.border,marginBottom:20}}/>
+        {dbOk===false&&<div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:14,marginBottom:16,color:"#dc2626",fontSize:13}}>Cannot connect to database</div>}
+        <label style={lbl}>Email Address</label>
+        <input style={{...inp,marginBottom:14}} placeholder="your@email.ng" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}/>
+        <label style={lbl}>PIN</label>
+        <input style={inp} type="password" maxLength={8} placeholder="Enter your PIN" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}/>
+        {err&&<div style={{color:"#dc2626",fontSize:13,marginTop:8}}>{err}</div>}
+        <button style={{width:"100%",background:T.logo,border:"none",borderRadius:10,color:"#fff",padding:"13px",fontWeight:800,fontSize:15,cursor:"pointer",marginTop:16}} onClick={go} disabled={loading}>{loading?"Connecting...":"Enter Tracka Church"}</button>
+        <div style={{fontSize:11,color:T.primary,marginTop:14,textAlign:"center"}}>{church.pastor} - Change PIN after first login</div>
+      </div>
+    </div>
+  );
+}
+
+function MainApp({church,user,onLogout}){
+  const T=church.theme,CID=church.id;
+  const[tab,setTab]=useState("dashboard");
+  const[ab,setAb]=useState(null);
+  const[dbOk,setDbOk]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[toast,setToast]=useState(null);
+  const[confirm,setConfirm]=useState(null);
+  const[users,setUsers]=useState([]);
+  const[members,setMembers]=useState([]);
+  const[offerings,setOfferings]=useState([]);
+  const[tithes,setTithes]=useState([]);
+  const[expenses,setExpenses]=useState([]);
+  const[projects,setProjects]=useState([]);
+  const[branches,setBranches]=useState(church.branches||[]);
+  const t2=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
+  const ask=(msg,fn)=>setConfirm({msg,fn});
+  const loadAll=useCallback(async()=>{
+    setLoading(true);
+    try{
+      const[u,mb,of,ti,ex,pr]=await Promise.all([
+        db.get("users",CID,"order=name.asc"),
+        db.get("church_members",CID,"order=name.asc"),
+        db.get("church_offerings",CID,"order=date.desc"),
+        db.get("church_tithes",CID,"order=date.desc"),
+        db.get("expenses",CID,"order=date.desc"),
+        db.get("church_projects",CID,"order=created_at.desc"),
+      ]);
+      setDbOk(!u.error);
+      if(u.data?.length)setUsers(u.data);
+      if(mb.data?.length)setMembers(mb.data);
+      if(of.data?.length)setOfferings(of.data);
+      if(ti.data?.length)setTithes(ti.data);
+      if(ex.data?.length)setExpenses(ex.data);
+      if(pr.data?.length)setProjects(pr.data);
+    }catch{setDbOk(false);}
+    setLoading(false);
+  },[CID]);
+  useEffect(()=>{loadAll();},[loadAll]);
+  const isPastor=user?.role==="pastor";
+  const P=PERM[user?.role]||{};
+  const myBranch=isPastor?ab:user?.branch;
+  const myBranches=isPastor?branches:(user?.branch?[user.branch]:[]);
+  const fB=arr=>isPastor&&!ab?arr:arr.filter(r=>r.branch===myBranch);
+  const fOf=fB(offerings),fTi=fB(tithes),fEx=fB(expenses),fMb=fB(members);
+  const totOf=fOf.reduce((s,r)=>s+ +r.amount,0);
+  const totTi=fTi.reduce((s,r)=>s+ +r.amount,0);
+  const totEx=fEx.reduce((s,r)=>s+ +r.amount,0);
+  const totIncome=totOf+totTi;
+  const doAddMember=async d=>{const row={client_id:CID,...d,id:genId(),joined:tod(),active:true};const{error}=await db.post("church_members",row);if(error){t2("Error","error");return;}setMembers(p=>[...p,row]);t2(d.name+" added");};
+  const doAddOffering=async d=>{const row={client_id:CID,...d,id:genId(),recorded_by:user.id};const{error}=await db.post("church_offerings",row);if(error){t2("Error","error");return;}setOfferings(p=>[row,...p]);t2("Offering recorded");};
+  const doAddTithe=async d=>{const row={client_id:CID,...d,id:genId(),recorded_by:user.id};const{error}=await db.post("church_tithes",row);if(error){t2("Error","error");return;}setTithes(p=>[row,...p]);t2("Tithe recorded");};
+  const doAddExp=async d=>{const row={client_id:CID,...d,id:genId(),addedBy:user.id};const{error}=await db.post("expenses",row);if(error){t2("Error","error");return;}setExpenses(p=>[row,...p]);t2("Expense saved");};
+  const doAddProject=async d=>{const row={client_id:CID,...d,id:genId(),created_at:tod(),status:"Active",raised:0};const{error}=await db.post("church_projects",row);if(error){t2("Error","error");return;}setProjects(p=>[row,...p]);t2("Project added");};
+  const doUpdateProject=async(id,updates)=>{await db.patch("church_projects",id,updates);setProjects(p=>p.map(r=>r.id===id?{...r,...updates}:r));t2("Updated");};
+  const doDel=async(type,id)=>{const tbl={member:"church_members",offering:"church_offerings",tithe:"church_tithes",expense:"expenses",project:"church_projects"};await db.remove(tbl[type],id);if(type==="member")setMembers(p=>p.filter(x=>x.id!==id));if(type==="offering")setOfferings(p=>p.filter(x=>x.id!==id));if(type==="tithe")setTithes(p=>p.filter(x=>x.id!==id));if(type==="expense")setExpenses(p=>p.filter(x=>x.id!==id));if(type==="project")setProjects(p=>p.filter(x=>x.id!==id));setConfirm(null);t2("Deleted","info");};
+  const doAddUser=async d=>{const row={client_id:CID,...d,id:genId(),active:true};const{error}=await db.post("users",row);if(error){t2("Error","error");return;}setUsers(p=>[...p,row]);t2(d.name+" added");};
+  const doToggle=async uid=>{const u=users.find(x=>x.id===uid);if(!u)return;await db.patch("users",uid,{active:!u.active});setUsers(p=>p.map(x=>x.id===uid?{...x,active:!x.active}:x));t2(u.name+" "+(u.active?"disabled":"enabled"));};
+  const doPin=async(uid,pin)=>{await db.patch("users",uid,{pin});setUsers(p=>p.map(u=>u.id===uid?{...u,pin}:u));t2("PIN updated");};
+  const nav=[{id:"dashboard",label:"Dashboard"},{id:"members",label:"Members"},{id:"offerings",label:"Offerings"},{id:"tithes",label:"Tithes"},{id:"expenses",label:"Expenses"},{id:"projects",label:"Projects"},{id:"branches",label:"Branches"},{id:"reports",label:"Reports"},...(isPastor?[{id:"users",label:"Users & Access"}]:[])];
+  const S={inp:{width:"100%",background:T.light,border:`1px solid ${T.border}`,borderRadius:7,padding:"9px 10px",color:T.dark,fontSize:13,outline:"none",boxSizing:"border-box"},lbl:{display:"block",fontSize:10,fontWeight:700,color:T.primary,marginBottom:5,textTransform:"uppercase",letterSpacing:.5},btn:{display:"flex",alignItems:"center",gap:7,background:T.logo,color:"#fff",border:"none",borderRadius:8,padding:"9px 15px",fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0},gBtn:{display:"flex",alignItems:"center",gap:7,background:T.light,border:`1px solid ${T.border}`,color:T.primary,borderRadius:8,padding:"9px 15px",fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0},save:{flex:2,background:T.logo,border:"none",borderRadius:7,color:"#fff",padding:"10px",fontWeight:700,cursor:"pointer",fontSize:14},canc:{flex:1,background:T.mid,border:"none",borderRadius:7,color:T.primary,padding:"10px",fontWeight:700,cursor:"pointer"},pay:{display:"flex",alignItems:"center",gap:4,background:T.mid,color:T.primary,border:`1px solid ${T.border}`,borderRadius:6,padding:"5px 9px",fontSize:12,cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"},del:{display:"flex",alignItems:"center",gap:3,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:11},th:{textAlign:"left",fontSize:10,fontWeight:700,color:T.primary,padding:"8px 10px",borderBottom:`1px solid ${T.border}`,textTransform:"uppercase",letterSpacing:.5,whiteSpace:"nowrap"},td:{padding:"10px",fontSize:13,borderBottom:`1px solid ${T.mid}`,color:"#374151",verticalAlign:"middle"},fc:{background:"#fff",border:`1px solid ${T.border}`,borderRadius:11,padding:17,marginBottom:16},fg:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(185px,1fr))",gap:12},mbox:{background:"#fff",border:`1px solid ${T.border}`,borderRadius:13,width:"100%",maxWidth:460},chip:(bg,tc)=>({background:bg||T.mid,color:tc||T.primary,fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:99,whiteSpace:"nowrap"}),pill:a=>({background:a?T.primary:T.light,color:a?"#fff":T.primary,border:`1px solid ${T.border}`,borderRadius:99,padding:"6px 14px",fontSize:12,cursor:"pointer",fontWeight:700})};
+  const Btn=({children,onClick,ghost})=><button onClick={onClick} style={ghost?S.gBtn:S.btn}>{children}</button>;
+  const Del=({onClick})=><button onClick={onClick} style={S.del}>Del</button>;
+  const Tag=({children,bg,tc})=><span style={S.chip(bg,tc)}>{children}</span>;
+  const FL=({l,children})=><div><label style={S.lbl}>{l}</label>{children}</div>;
+  const FG=({children})=><div style={S.fg}>{children}</div>;
+  const FC=({title,children})=><div style={S.fc}><div style={{fontWeight:700,fontSize:11,color:T.primary,marginBottom:14,textTransform:"uppercase",letterSpacing:.5}}>{title}</div>{children}</div>;
+  const TH=({title,sub,sc,children})=><div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}><div><div style={{fontWeight:800,fontSize:18,color:T.dark}}>{title}</div>{sub&&<div style={{fontSize:13,color:sc||"#374151",fontWeight:700}}>{sub}</div>}</div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{children}</div></div>;
+  const KV=({l,v,c})=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.mid}`,fontSize:13,color:"#374151"}}><span>{l}</span><strong style={{color:c||"#374151"}}>{v}</strong></div>;
+  function Grid({cols,rows}){return<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{cols.map(c=><th key={c} style
