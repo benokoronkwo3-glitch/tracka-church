@@ -12,7 +12,7 @@ const CHURCHES = {
     state: "Anambra State",
     pastor: "Bishop Dr Paul Nwachukwu JP",
     pastoralTitle: "Papa",
-    phone: "08033210572",
+    phone: "08033210517",
     logo: "GGM",
     welcomeMsg: "Grace of God Mission International warmly welcomes you! We are so glad you joined us today. Bishop Dr Paul Nwachukwu JP (Papa) personally sends his warm greetings and blessings to you. We invite you to make GGM your spiritual home and join us for our enriching programs: Mid-Week Service (Wednesdays), Jesus Clinic, Monday Prayer, and many more. May God bless you richly as you continue to worship with us. You are family!",
     defaultBranches: [
